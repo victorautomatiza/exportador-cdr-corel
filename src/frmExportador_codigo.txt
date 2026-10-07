@@ -1,0 +1,371 @@
+'==============================================================================
+' CÓDIGO DO USERFORM  "frmExportador"
+'------------------------------------------------------------------------------
+' COMO USAR:
+'   1) No editor VBA do CorelDRAW: Inserir > UserForm (deixe-o VAZIO).
+'   2) Na janela Propriedades (F4), altere (Name) para:  frmExportador
+'   3) Dê dois cliques no formulário (ou F7) para abrir o código, APAGUE tudo
+'      o que estiver lá e cole TODO o conteúdo abaixo desta caixa de comentário.
+'
+' Todos os controles são criados por código no UserForm_Initialize, por isso
+' não é preciso desenhar nada no formulário.
+'==============================================================================
+Option Explicit
+
+Private Const FONTE As String = "Segoe UI"
+Private Const CHAVE_REG As String = "ExportadorCDR"
+
+' Botões (com eventos)
+Private WithEvents btnOrigem As MSForms.CommandButton
+Private WithEvents btnDestino As MSForms.CommandButton
+Private WithEvents btnSalvar As MSForms.CommandButton
+Private WithEvents btnSair As MSForms.CommandButton
+
+' Demais controles
+Private txtOrigem As MSForms.TextBox
+Private txtDestino As MSForms.TextBox
+Private fraFormato As MSForms.Frame
+Private optJPEG As MSForms.OptionButton
+Private optPNG As MSForms.OptionButton
+Private optPDF As MSForms.OptionButton
+Private chkPaginas As MSForms.CheckBox
+Private chkCurvas As MSForms.CheckBox
+Private lblStatus As MSForms.Label
+Private lblBarraFundo As MSForms.Label
+Private lblBarra As MSForms.Label
+
+Private mProcessando As Boolean
+Private mCancelar As Boolean
+
+
+'==============================================================================
+' INICIALIZAÇÃO E CONSTRUÇÃO DA INTERFACE
+'==============================================================================
+Private Sub UserForm_Initialize()
+    Me.Caption = "Exportador de arquivos CDR"
+    Me.BackColor = RGB(255, 255, 255)
+    Me.Width = 472
+    Me.Height = 412
+    Me.StartUpPosition = 1      ' centralizado no Corel
+
+    ConstruirInterface
+    CarregarConfiguracao
+End Sub
+
+Private Sub ConstruirInterface()
+    Dim sep As MSForms.Label
+    Dim cinza As Long, azul As Long
+
+    cinza = RGB(110, 110, 110)
+    azul = RGB(0, 90, 160)
+
+    ' --- Cabeçalho ---
+    CriarLabel Me, "lblTitulo", "Exportador de arquivos CDR", 18, 12, 424, 22, 15, True, azul
+    CriarLabel Me, "lblSub", "Exporta todos os .CDR da pasta e das subpastas, mantendo a estrutura.", _
+               18, 36, 424, 16, 8.5, False, cinza
+    CriarSeparador "lblSep1", 58
+
+    ' --- Pasta de origem ---
+    CriarLabel Me, "lblOrigem", "Arquivos (pasta de origem dos .CDR)", 18, 68, 424, 14, 9, True, RGB(40, 40, 40)
+    Set txtOrigem = CriarTexto("txtOrigem", 18, 84, 326, 22)
+    Set btnOrigem = CriarBotao("btnOrigem", "Selecionar...", 352, 84, 90, 22, False)
+
+    ' --- Pasta de destino ---
+    CriarLabel Me, "lblDestino", "Destino (pasta onde serão salvos os exportados)", 18, 116, 424, 14, 9, True, RGB(40, 40, 40)
+    Set txtDestino = CriarTexto("txtDestino", 18, 132, 326, 22)
+    Set btnDestino = CriarBotao("btnDestino", "Selecionar...", 352, 132, 90, 22, False)
+
+    ' --- Formato ---
+    Set fraFormato = Me.Controls.Add("Forms.Frame.1", "fraFormato", True)
+    With fraFormato
+        .Left = 18: .Top = 166: .Width = 424: .Height = 46
+        .Caption = "Formato"
+        .BackColor = Me.BackColor
+        .Font.Name = FONTE: .Font.Size = 9
+    End With
+    Set optJPEG = CriarOpcao(fraFormato, "optJPEG", "JPEG", 14, 4, 90)
+    Set optPNG = CriarOpcao(fraFormato, "optPNG", "PNG", 124, 4, 90)
+    Set optPDF = CriarOpcao(fraFormato, "optPDF", "PDF", 234, 4, 90)
+
+    CriarLabel Me, "lblDica", "JPEG: 300 DPI, modo de cor do Corel   |   PNG: padrão Web   |   PDF: padrão atual", _
+               18, 216, 424, 14, 8, False, cinza
+
+    ' --- Opções ---
+    Set chkPaginas = CriarCheck("chkPaginas", "Salvar cada página como um arquivo separado", 18, 240, 424)
+    Set chkCurvas = CriarCheck("chkCurvas", "Converter textos em curvas", 18, 262, 424)
+    CriarSeparador "lblSep2", 288
+
+    ' --- Progresso ---
+    Set lblStatus = CriarLabel(Me, "lblStatus", "Pronto para exportar.", 18, 296, 424, 16, 9, False, RGB(60, 60, 60))
+    Set lblBarraFundo = CriarLabel(Me, "lblBarraFundo", "", 18, 316, 424, 10, 9, False, 0)
+    lblBarraFundo.BackStyle = fmBackStyleOpaque
+    lblBarraFundo.BackColor = RGB(225, 225, 225)
+    Set lblBarra = CriarLabel(Me, "lblBarra", "", 18, 316, 0, 10, 9, False, 0)
+    lblBarra.BackStyle = fmBackStyleOpaque
+    lblBarra.BackColor = RGB(0, 150, 80)
+
+    ' --- Botões ---
+    Set btnSalvar = CriarBotao("btnSalvar", "Salvar", 254, 338, 92, 28, True)
+    Set btnSair = CriarBotao("btnSair", "Sair", 350, 338, 92, 28, False)
+    btnSalvar.Default = True
+    btnSair.Cancel = True
+End Sub
+
+'--- Fábricas de controles ----------------------------------------------------
+Private Function CriarLabel(ByVal cont As Object, ByVal nome As String, ByVal texto As String, _
+        ByVal x As Single, ByVal y As Single, ByVal w As Single, ByVal h As Single, _
+        ByVal tam As Single, ByVal negrito As Boolean, ByVal cor As Long) As MSForms.Label
+    Dim c As MSForms.Label
+    Set c = cont.Controls.Add("Forms.Label.1", nome, True)
+    With c
+        .Left = x: .Top = y: .Width = w: .Height = h
+        .Caption = texto
+        .Font.Name = FONTE: .Font.Size = tam: .Font.Bold = negrito
+        .ForeColor = cor
+        .BackStyle = fmBackStyleTransparent
+    End With
+    Set CriarLabel = c
+End Function
+
+Private Sub CriarSeparador(ByVal nome As String, ByVal y As Single)
+    Dim c As MSForms.Label
+    Set c = Me.Controls.Add("Forms.Label.1", nome, True)
+    With c
+        .Left = 18: .Top = y: .Width = 424: .Height = 1
+        .BackStyle = fmBackStyleOpaque
+        .BackColor = RGB(215, 215, 215)
+    End With
+End Sub
+
+Private Function CriarTexto(ByVal nome As String, ByVal x As Single, ByVal y As Single, _
+        ByVal w As Single, ByVal h As Single) As MSForms.TextBox
+    Dim c As MSForms.TextBox
+    Set c = Me.Controls.Add("Forms.TextBox.1", nome, True)
+    With c
+        .Left = x: .Top = y: .Width = w: .Height = h
+        .Font.Name = FONTE: .Font.Size = 9
+        .BorderStyle = fmBorderStyleSingle
+        .SpecialEffect = fmSpecialEffectFlat
+        .BorderColor = RGB(165, 165, 165)
+    End With
+    Set CriarTexto = c
+End Function
+
+Private Function CriarBotao(ByVal nome As String, ByVal texto As String, ByVal x As Single, _
+        ByVal y As Single, ByVal w As Single, ByVal h As Single, _
+        ByVal primario As Boolean) As MSForms.CommandButton
+    Dim c As MSForms.CommandButton
+    Set c = Me.Controls.Add("Forms.CommandButton.1", nome, True)
+    With c
+        .Left = x: .Top = y: .Width = w: .Height = h
+        .Caption = texto
+        .Font.Name = FONTE: .Font.Size = 9
+        If primario Then
+            .Font.Bold = True
+            .BackColor = RGB(0, 120, 215)
+            .ForeColor = RGB(255, 255, 255)
+        Else
+            .BackColor = RGB(240, 240, 240)
+            .ForeColor = RGB(30, 30, 30)
+        End If
+    End With
+    Set CriarBotao = c
+End Function
+
+Private Function CriarOpcao(ByVal cont As Object, ByVal nome As String, ByVal texto As String, _
+        ByVal x As Single, ByVal y As Single, ByVal w As Single) As MSForms.OptionButton
+    Dim c As MSForms.OptionButton
+    Set c = cont.Controls.Add("Forms.OptionButton.1", nome, True)
+    With c
+        .Left = x: .Top = y: .Width = w: .Height = 18
+        .Caption = texto
+        .Font.Name = FONTE: .Font.Size = 9
+        .BackStyle = fmBackStyleTransparent
+    End With
+    Set CriarOpcao = c
+End Function
+
+Private Function CriarCheck(ByVal nome As String, ByVal texto As String, ByVal x As Single, _
+        ByVal y As Single, ByVal w As Single) As MSForms.CheckBox
+    Dim c As MSForms.CheckBox
+    Set c = Me.Controls.Add("Forms.CheckBox.1", nome, True)
+    With c
+        .Left = x: .Top = y: .Width = w: .Height = 18
+        .Caption = texto
+        .Font.Name = FONTE: .Font.Size = 9
+        .BackStyle = fmBackStyleTransparent
+    End With
+    Set CriarCheck = c
+End Function
+
+
+'==============================================================================
+' CONFIGURAÇÕES LEMBRADAS ENTRE USOS (registro do Windows, via GetSetting)
+'==============================================================================
+Private Sub CarregarConfiguracao()
+    txtOrigem.Text = GetSetting(CHAVE_REG, "Config", "Origem", "")
+    txtDestino.Text = GetSetting(CHAVE_REG, "Config", "Destino", "")
+
+    Select Case Val(GetSetting(CHAVE_REG, "Config", "Formato", CStr(FMT_PDF)))
+        Case FMT_JPEG: optJPEG.Value = True
+        Case FMT_PNG: optPNG.Value = True
+        Case Else: optPDF.Value = True
+    End Select
+
+    chkPaginas.Value = (GetSetting(CHAVE_REG, "Config", "Paginas", "0") = "1")
+    chkCurvas.Value = (GetSetting(CHAVE_REG, "Config", "Curvas", "0") = "1")
+End Sub
+
+Private Sub SalvarConfiguracao()
+    On Error Resume Next
+    SaveSetting CHAVE_REG, "Config", "Origem", Trim$(txtOrigem.Text)
+    SaveSetting CHAVE_REG, "Config", "Destino", Trim$(txtDestino.Text)
+    SaveSetting CHAVE_REG, "Config", "Formato", CStr(FormatoSelecionado())
+    SaveSetting CHAVE_REG, "Config", "Paginas", IIf(chkPaginas.Value, "1", "0")
+    SaveSetting CHAVE_REG, "Config", "Curvas", IIf(chkCurvas.Value, "1", "0")
+End Sub
+
+Private Function FormatoSelecionado() As Long
+    If optJPEG.Value Then
+        FormatoSelecionado = FMT_JPEG
+    ElseIf optPNG.Value Then
+        FormatoSelecionado = FMT_PNG
+    Else
+        FormatoSelecionado = FMT_PDF
+    End If
+End Function
+
+
+'==============================================================================
+' EVENTOS DOS BOTÕES
+'==============================================================================
+Private Sub btnOrigem_Click()
+    Dim p As String
+    p = EscolherPasta("Selecione a pasta que contém os arquivos .CDR")
+    If Len(p) > 0 Then txtOrigem.Text = p
+End Sub
+
+Private Sub btnDestino_Click()
+    Dim p As String
+    p = EscolherPasta("Selecione a pasta onde os arquivos exportados serão salvos")
+    If Len(p) > 0 Then txtDestino.Text = p
+End Sub
+
+Private Sub btnSalvar_Click()
+    Dim fso As Object
+    Dim origem As String, destino As String
+    Dim res As ResultadoExportacao
+    Dim ok As Boolean
+
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    origem = Trim$(txtOrigem.Text)
+    destino = Trim$(txtDestino.Text)
+
+    ' --- Validações ---
+    If Len(origem) = 0 Or Not fso.FolderExists(origem) Then
+        MsgBox "Selecione uma pasta de origem válida.", vbExclamation, "Exportador de CDR"
+        txtOrigem.SetFocus
+        Exit Sub
+    End If
+    If Len(destino) = 0 Then
+        MsgBox "Selecione a pasta de destino.", vbExclamation, "Exportador de CDR"
+        txtDestino.SetFocus
+        Exit Sub
+    End If
+    If StrComp(fso.GetAbsolutePathName(origem), fso.GetAbsolutePathName(destino), vbTextCompare) = 0 Then
+        MsgBox "A pasta de destino precisa ser diferente da pasta de origem.", _
+               vbExclamation, "Exportador de CDR"
+        txtDestino.SetFocus
+        Exit Sub
+    End If
+
+    SalvarConfiguracao
+
+    ' --- Executa ---
+    DefinirOcupado True
+    ok = modExportadorCDR.ProcessarPasta(origem, destino, FormatoSelecionado(), _
+                                         CBool(chkPaginas.Value), CBool(chkCurvas.Value), _
+                                         Me, res)
+    DefinirOcupado False
+
+    If ok Then
+        modExportadorCDR.MostrarRelatorio res, destino
+    Else
+        lblStatus.Caption = "Pronto para exportar."
+        lblBarra.Width = 0
+    End If
+End Sub
+
+Private Sub btnSair_Click()
+    If mProcessando Then
+        ' Durante o processamento o botão vira "Cancelar": termina o arquivo atual e para
+        mCancelar = True
+        btnSair.Enabled = False
+        lblStatus.Caption = "Cancelando após o arquivo atual..."
+    Else
+        Unload Me
+    End If
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If mProcessando Then
+        Cancel = True               ' não deixa fechar no meio do processamento
+        mCancelar = True
+        lblStatus.Caption = "Cancelando após o arquivo atual..."
+    End If
+End Sub
+
+
+'==============================================================================
+' ESTADO "OCUPADO" E PROGRESSO (chamados pelo módulo durante o processamento)
+'==============================================================================
+Private Sub DefinirOcupado(ByVal ocupado As Boolean)
+    mProcessando = ocupado
+    If ocupado Then mCancelar = False
+
+    txtOrigem.Enabled = Not ocupado
+    txtDestino.Enabled = Not ocupado
+    btnOrigem.Enabled = Not ocupado
+    btnDestino.Enabled = Not ocupado
+    fraFormato.Enabled = Not ocupado
+    chkPaginas.Enabled = Not ocupado
+    chkCurvas.Enabled = Not ocupado
+    btnSalvar.Enabled = Not ocupado
+    btnSair.Enabled = True
+
+    If ocupado Then
+        btnSair.Caption = "Cancelar"
+        lblBarra.Width = 0
+        lblStatus.Caption = "Preparando..."
+    Else
+        btnSair.Caption = "Sair"
+    End If
+    Me.Repaint
+End Sub
+
+Public Sub AtualizarProgresso(ByVal atual As Long, ByVal total As Long, ByVal texto As String)
+    lblStatus.Caption = texto
+    If total > 0 Then lblBarra.Width = lblBarraFundo.Width * atual / total
+    Me.Repaint
+    DoEvents
+End Sub
+
+Public Function CancelamentoSolicitado() As Boolean
+    DoEvents
+    CancelamentoSolicitado = mCancelar
+End Function
+
+
+'==============================================================================
+' SELETOR DE PASTA (Shell.Application - funciona em qualquer versão do Corel)
+'==============================================================================
+Private Function EscolherPasta(ByVal titulo As String) As String
+    Dim sh As Object, pasta As Object
+    Dim h As Long
+
+    On Error Resume Next
+    h = Application.AppWindow.Handle       ' mantém o diálogo na frente do Corel
+    Set sh = CreateObject("Shell.Application")
+    Set pasta = sh.BrowseForFolder(h, titulo, &H41)    ' somente pastas + estilo novo
+    If Not pasta Is Nothing Then EscolherPasta = pasta.Self.Path
+End Function

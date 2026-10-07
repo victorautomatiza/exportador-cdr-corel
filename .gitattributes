@@ -1,0 +1,27 @@
+# Normaliza fins de linha automaticamente para arquivos de texto em geral
+* text=auto
+
+# Documentação e metadados: LF
+*.md text eol=lf
+LICENSE text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# Código VBA: o editor VBA do CorelDRAW espera CRLF e codificação ANSI (Windows-1252).
+# O Git guarda internamente em UTF-8 (o GitHub exibe os acentos corretamente)
+# e converte para Windows-1252 ao fazer o checkout. Requer Git 2.18 ou superior.
+*.bas text eol=crlf working-tree-encoding=CP1252
+*.frm text eol=crlf working-tree-encoding=CP1252
+*.cls text eol=crlf working-tree-encoding=CP1252
+src/*.txt text eol=crlf working-tree-encoding=CP1252
+
+# Binários
+*.cdr binary
+*.cdt binary
+*.cpx binary
+*.gms binary
+*.frx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary
